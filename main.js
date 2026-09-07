@@ -1,0 +1,784 @@
+        
+        const PLANETS = {
+            all: {
+                name: "Planetary Trio",
+                desc: "An overview of Mars, Earth, and Saturn with its sweeping rings, positioned across the cosmic space.",
+                stats: "Mars (-7.5) • Earth (0.0) • Saturn (+8.5)",
+                camPos: [2.0, 1.2, 30.0],
+                target: [2.0, 0, 0]
+            },
+            earth: {
+                name: "Earth",
+                desc: "The third planet from the Sun and the only astronomical object known to harbor life, covered by liquid oceans and rotating atmosphere.",
+                stats: "12,742 km diameter • 1 Moon • 1.00 AU from Sun",
+                camPos: [0, 0, 5.5],
+                target: [0, 0, 0]
+            },
+            saturn: {
+                name: "Saturn",
+                desc: "The magnificent gas giant famous for its sweeping ring system composed of billions of ice and rock particles, with prominent Cassini Division.",
+                stats: "116,460 km diameter • 146 Moons • 9.58 AU from Sun",
+                camPos: [8.5, 0.8, 8.2],
+                target: [8.5, 0, 0]
+            },
+            mars: {
+                name: "Mars",
+                desc: "The Red Planet, a cold desert world with a thin atmosphere, massive volcanoes like Olympus Mons, and bright polar water-ice caps.",
+                stats: "6,779 km diameter • 2 Moons • 1.52 AU from Sun",
+                camPos: [-7.5, 0, 4.6],
+                target: [-7.5, 0, 0]
+            }
+        };
+
+        const canvas = document.getElementById('canvas');
+        const infoPanel = document.getElementById('info-panel');
+        const planetName = document.getElementById('planet-name');
+        const planetDesc = document.getElementById('planet-desc');
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const btnRotate = document.getElementById('btn-rotate');
+        const modeBadge = document.getElementById('mode-badge');
+
+        let activePlanet = 'earth';
+        let autoRotate = true;
+
+        function updateUI(key) {
+            const p = PLANETS[key];
+            if (!p) return;
+            activePlanet = key;
+
+            infoPanel.style.opacity = '0';
+            setTimeout(() => {
+                planetName.innerText = p.name;
+                planetDesc.innerText = p.desc;
+                infoPanel.style.opacity = '1';
+            }, 100);
+
+            tabBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-planet') === key);
+            });
+
+            try { history.replaceState(null, '', '#' + key); } catch(e) {}
+        }
+
+        function probeWebGL(c) {
+            const probes = [
+                () => c.getContext('webgl2'),
+                () => c.getContext('webgl'),
+                () => c.getContext('experimental-webgl'),
+                () => c.getContext('webgl2', { failIfMajorPerformanceCaveat: false }),
+                () => c.getContext('webgl', { failIfMajorPerformanceCaveat: false }),
+                () => c.getContext('experimental-webgl', { failIfMajorPerformanceCaveat: false })
+            ];
+            for (const p of probes) {
+                try {
+                    const ctx = p();
+                    if (ctx) return ctx;
+                } catch(e) {}
+            }
+            return null;
+        }
+
+        const glContext = probeWebGL(canvas);
+
+        if (glContext && typeof THREE !== 'undefined') {
+            
+            initThreeJS(glContext);
+        } else {
+            
+            initCanvas2D();
+        }
+
+        function initThreeJS(gl) {
+            const renderer = new THREE.WebGLRenderer({
+                canvas: canvas,
+                context: gl,
+                preserveDrawingBuffer: true
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setClearColor(0x030a1c, 1.0);
+
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 5.5);
+
+            let controls;
+            if (typeof THREE.OrbitControls !== 'undefined') {
+                controls = new THREE.OrbitControls(camera, canvas);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.05;
+                controls.minDistance = 2.0;
+                controls.maxDistance = 35;
+                controls.target.set(0, 0, 0);
+            } else {
+                controls = { target: new THREE.Vector3(0, 0, 0), update: () => {} };
+            }
+
+            const sunLight = new THREE.DirectionalLight(0xfff8ee, 1.6);
+            sunLight.position.set(15, 8, 12);
+            scene.add(sunLight);
+
+            const ambientLight = new THREE.AmbientLight(0x1d3557, 0.9);
+            scene.add(ambientLight);
+
+            const rimLight = new THREE.DirectionalLight(0x3a86ff, 0.5);
+            rimLight.position.set(-15, -4, -10);
+            scene.add(rimLight);
+
+            const loader = new THREE.TextureLoader();
+            function loadTex(p) {
+                return loader.load(p, () => renderer.render(scene, camera));
+            }
+
+            const texEarth = loadTex('textures/earth.png');
+            const texClouds = loadTex('textures/earth_clouds.png');
+            const texSaturn = loadTex('textures/saturn.png');
+            const texSaturnRing = loadTex('textures/saturn_ring.png');
+            const texMars = loadTex('textures/mars.png');
+
+            const starCount = 1800;
+            const starGeo = new THREE.BufferGeometry();
+            const starPos = new Float32Array(starCount * 3);
+            for (let i = 0; i < starCount * 3; i += 3) {
+                const r = 40 + Math.random() * 110;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(Math.random() * 2 - 1);
+                starPos[i] = r * Math.sin(phi) * Math.cos(theta);
+                starPos[i + 1] = r * Math.sin(phi) * Math.sin(theta);
+                starPos[i + 2] = r * Math.cos(phi);
+            }
+            starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+            const starMat = new THREE.PointsMaterial({
+                color: 0x90b4ce,
+                size: 0.9,
+                transparent: true,
+                opacity: 0.85
+            });
+            scene.add(new THREE.Points(starGeo, starMat));
+
+            const earthGroup = new THREE.Group();
+            earthGroup.position.set(0, 0, 0);
+
+            const earthMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1.6, 48, 48),
+                new THREE.MeshPhongMaterial({ map: texEarth, color: 0xffffff, shininess: 15 })
+            );
+            earthMesh.rotation.z = THREE.MathUtils.degToRad(23.44);
+            earthMesh.userData = { planet: 'earth' };
+            earthGroup.add(earthMesh);
+
+            const cloudMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1.62, 48, 48),
+                new THREE.MeshPhongMaterial({ map: texClouds, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending })
+            );
+            cloudMesh.rotation.z = THREE.MathUtils.degToRad(23.44);
+            earthGroup.add(cloudMesh);
+            scene.add(earthGroup);
+
+            const saturnGroup = new THREE.Group();
+            saturnGroup.position.set(8.5, 0, 0);
+
+            const saturnMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(2.0, 48, 48),
+                new THREE.MeshPhongMaterial({ map: texSaturn, color: 0xffffff, shininess: 6 })
+            );
+            saturnMesh.rotation.z = THREE.MathUtils.degToRad(26.73);
+            saturnMesh.userData = { planet: 'saturn' };
+            saturnGroup.add(saturnMesh);
+
+            const ringGeo = new THREE.RingGeometry(2.5, 4.5, 64);
+            const pos = ringGeo.attributes.position;
+            const uvs = ringGeo.attributes.uv;
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const y = pos.getY(i);
+                uvs.setXY(i, (x / 4.5 + 1) * 0.5, (y / 4.5 + 1) * 0.5);
+            }
+            ringGeo.attributes.uv.needsUpdate = true;
+
+            const ringMesh = new THREE.Mesh(
+                ringGeo,
+                new THREE.MeshBasicMaterial({ map: texSaturnRing, side: THREE.DoubleSide, transparent: true, opacity: 0.95 })
+            );
+            ringMesh.rotation.x = Math.PI / 2 + THREE.MathUtils.degToRad(26.73);
+            ringMesh.userData = { planet: 'saturn' };
+            saturnGroup.add(ringMesh);
+            scene.add(saturnGroup);
+
+            const marsGroup = new THREE.Group();
+            marsGroup.position.set(-7.5, 0, 0);
+
+            const marsMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1.2, 48, 48),
+                new THREE.MeshPhongMaterial({ map: texMars, color: 0xffffff, shininess: 6 })
+            );
+            marsMesh.rotation.z = THREE.MathUtils.degToRad(25.19);
+            marsMesh.userData = { planet: 'mars' };
+            marsGroup.add(marsMesh);
+            scene.add(marsGroup);
+
+            const rocketGroup = new THREE.Group();
+            const rocketMat = new THREE.MeshPhongMaterial({ color: 0xf8fafc, shininess: 40 });
+            const rocketRedMat = new THREE.MeshPhongMaterial({ color: 0xef4444, shininess: 40 });
+            const rocketDarkMat = new THREE.MeshPhongMaterial({ color: 0x334155, shininess: 25 });
+            const rocketWindowMat = new THREE.MeshPhongMaterial({ color: 0x38bdf8, shininess: 90 });
+
+            const bodyMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.2, 16), rocketMat);
+            rocketGroup.add(bodyMesh);
+
+            const noseMesh = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.55, 16), rocketRedMat);
+            noseMesh.position.y = 0.875;
+            rocketGroup.add(noseMesh);
+
+            const visorMesh = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), rocketWindowMat);
+            visorMesh.position.set(0, 0.35, 0.17);
+            rocketGroup.add(visorMesh);
+
+            const finGeo = new THREE.BoxGeometry(0.04, 0.45, 0.28);
+            const fin1 = new THREE.Mesh(finGeo, rocketRedMat);
+            fin1.position.set(0.24, -0.42, 0);
+            rocketGroup.add(fin1);
+            const fin2 = new THREE.Mesh(finGeo, rocketRedMat);
+            fin2.position.set(-0.24, -0.42, 0);
+            rocketGroup.add(fin2);
+            const fin3 = new THREE.Mesh(finGeo, rocketRedMat);
+            fin3.position.set(0, -0.42, 0.24);
+            fin3.rotation.y = Math.PI / 2;
+            rocketGroup.add(fin3);
+            const fin4 = new THREE.Mesh(finGeo, rocketRedMat);
+            fin4.position.set(0, -0.42, -0.24);
+            fin4.rotation.y = Math.PI / 2;
+            rocketGroup.add(fin4);
+
+            const nozzleMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 0.2, 16), rocketDarkMat);
+            nozzleMesh.position.y = -0.7;
+            rocketGroup.add(nozzleMesh);
+
+            const flameGeo = new THREE.ConeGeometry(0.12, 0.65, 12);
+            flameGeo.rotateX(Math.PI);
+            const flameMat = new THREE.MeshBasicMaterial({ color: 0xff7700, transparent: true, opacity: 0.9 });
+            const flameMesh = new THREE.Mesh(flameGeo, flameMat);
+            flameMesh.position.y = -1.05;
+            rocketGroup.add(flameMesh);
+
+            rocketGroup.scale.set(1.35, 1.35, 1.35);
+            scene.add(rocketGroup);
+
+            const asteroidMat = new THREE.MeshPhongMaterial({ color: 0x78716c, flatShading: true, shininess: 5 });
+            const asteroidField = new THREE.Group();
+            const asteroidList = [];
+
+            const mainAsteroidGeo = new THREE.DodecahedronGeometry(0.95, 1);
+            const aPos = mainAsteroidGeo.attributes.position;
+            for (let i = 0; i < aPos.count; i++) {
+                const v = new THREE.Vector3().fromBufferAttribute(aPos, i);
+                v.multiplyScalar(0.85 + Math.abs(Math.sin(v.x * 4.2 + v.y * 3.1)) * 0.32);
+                aPos.setXYZ(i, v.x, v.y, v.z);
+            }
+            mainAsteroidGeo.computeVertexNormals();
+            const mainAsteroid = new THREE.Mesh(mainAsteroidGeo, asteroidMat);
+            mainAsteroid.position.set(-3.8, 3.2, -6);
+            asteroidField.add(mainAsteroid);
+            asteroidList.push({ mesh: mainAsteroid, rx: 0.007, ry: 0.009, rz: 0.004 });
+
+            for (let k = 0; k < 18; k++) {
+                const sRadius = 0.22 + Math.random() * 0.42;
+                const sGeo = new THREE.DodecahedronGeometry(sRadius, 0);
+                const sPos = sGeo.attributes.position;
+                for (let i = 0; i < sPos.count; i++) {
+                    const v = new THREE.Vector3().fromBufferAttribute(sPos, i);
+                    v.multiplyScalar(0.85 + Math.random() * 0.3);
+                    sPos.setXYZ(i, v.x, v.y, v.z);
+                }
+                sGeo.computeVertexNormals();
+                const sMesh = new THREE.Mesh(sGeo, asteroidMat);
+                sMesh.position.set(
+                    (Math.random() - 0.5) * 36,
+                    (Math.random() - 0.5) * 16,
+                    -6 - Math.random() * 16
+                );
+                asteroidField.add(sMesh);
+                asteroidList.push({
+                    mesh: sMesh,
+                    rx: (Math.random() - 0.5) * 0.02,
+                    ry: (Math.random() - 0.5) * 0.02,
+                    rz: (Math.random() - 0.5) * 0.02
+                });
+            }
+            scene.add(asteroidField);
+            let rocketAngle = 0;
+
+            const clickableMeshes = [earthMesh, saturnMesh, ringMesh, marsMesh];
+
+            const anim = {
+                active: false,
+                startCam: new THREE.Vector3(),
+                endCam: new THREE.Vector3(),
+                startLook: new THREE.Vector3(),
+                endLook: new THREE.Vector3(),
+                startTime: 0,
+                duration: 1.0
+            };
+
+            function flyTo(camPosArr, targetArr) {
+                anim.active = true;
+                anim.startCam.copy(camera.position);
+                anim.endCam.set(camPosArr[0], camPosArr[1], camPosArr[2]);
+                anim.startLook.copy(controls.target);
+                anim.endLook.set(targetArr[0], targetArr[1], targetArr[2]);
+                anim.startTime = performance.now();
+            }
+
+            function selectPlanet(key) {
+                updateUI(key);
+                const p = PLANETS[key];
+                if (p) flyTo(p.camPos, p.target);
+            }
+
+            const initH = window.location.hash.replace('#', '').toLowerCase();
+            if (['all', 'earth', 'saturn', 'mars'].includes(initH)) {
+                selectPlanet(initH);
+            }
+
+            window.addEventListener('hashchange', () => {
+                const h = window.location.hash.replace('#', '').toLowerCase();
+                if (['all', 'earth', 'saturn', 'mars'].includes(h)) selectPlanet(h);
+            });
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectPlanet(btn.getAttribute('data-planet'));
+                });
+            });
+
+            btnRotate.addEventListener('click', (e) => {
+                e.stopPropagation();
+                autoRotate = !autoRotate;
+                btnRotate.classList.toggle('off', !autoRotate);
+            });
+
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            let downPos = { x: 0, y: 0 };
+
+            window.addEventListener('pointerdown', (e) => {
+                downPos = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('pointerup', (e) => {
+                if (Math.abs(e.clientX - downPos.x) > 5 || Math.abs(e.clientY - downPos.y) > 5) return;
+                if (e.target.closest('header') || e.target.closest('.switcher') || e.target.closest('.controls-right')) return;
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObjects(clickableMeshes, false);
+                if (hits.length > 0) {
+                    const p = hits[0].object.userData.planet;
+                    if (p) selectPlanet(p);
+                }
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                raycaster.setFromCamera(mouse, camera);
+                const hits = raycaster.intersectObjects(clickableMeshes, false);
+                canvas.style.cursor = (hits.length > 0) ? 'pointer' : 'grab';
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            });
+
+            const clock = new THREE.Clock();
+            function animate() {
+                requestAnimationFrame(animate);
+                const delta = clock.getDelta();
+                const factor = delta * 60;
+
+                if (anim.active) {
+                    const elapsed = (performance.now() - anim.startTime) / 1000;
+                    const t = Math.min(elapsed / anim.duration, 1.0);
+                    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+                    camera.position.lerpVectors(anim.startCam, anim.endCam, ease);
+                    controls.target.lerpVectors(anim.startLook, anim.endLook, ease);
+                    camera.lookAt(controls.target);
+                    if (t >= 1.0) {
+                        anim.active = false;
+                        controls.target.copy(anim.endLook);
+                    }
+                } else {
+                    controls.update();
+                }
+
+                if (autoRotate) {
+                    earthMesh.rotation.y += 0.005 * factor;
+                    cloudMesh.rotation.y += 0.007 * factor;
+                    saturnMesh.rotation.y += 0.006 * factor;
+                    ringMesh.rotation.z += 0.002 * factor;
+                    marsMesh.rotation.y += 0.004 * factor;
+                }
+
+                rocketAngle += 0.007 * factor;
+                const rX = Math.sin(rocketAngle) * 12;
+                const rY = Math.cos(rocketAngle * 1.3) * 3.5 + 1.8;
+                const rZ = Math.cos(rocketAngle * 0.9) * 4 - 3;
+                rocketGroup.position.set(rX, rY, rZ);
+
+                const nX = Math.sin(rocketAngle + 0.04) * 12;
+                const nY = Math.cos((rocketAngle + 0.04) * 1.3) * 3.5 + 1.8;
+                const nZ = Math.cos((rocketAngle + 0.04) * 0.9) * 4 - 3;
+                rocketGroup.lookAt(nX, nY, nZ);
+                rocketGroup.rotateX(Math.PI / 2);
+
+                const flamePulse = 1.0 + Math.sin(rocketAngle * 30) * 0.2;
+                flameMesh.scale.set(flamePulse, flamePulse, flamePulse);
+
+                for (let a of asteroidList) {
+                    a.mesh.rotation.x += a.rx * factor;
+                    a.mesh.rotation.y += a.ry * factor;
+                    a.mesh.rotation.z += a.rz * factor;
+                }
+
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        function initCanvas2D() {
+            modeBadge.innerHTML = '<strong>Display Mode</strong>: Hardware WebGL disabled by browser. Running smooth 2D compatibility renderer.';
+            modeBadge.style.display = 'block';
+
+            const ctx = canvas.getContext('2d');
+            let width = window.innerWidth;
+            let height = window.innerHeight;
+
+            function resize() {
+                width = window.innerWidth;
+                height = window.innerHeight;
+                canvas.width = width * (window.devicePixelRatio || 1);
+                canvas.height = height * (window.devicePixelRatio || 1);
+                ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+            }
+            resize();
+            window.addEventListener('resize', resize);
+
+            const images = {
+                earth: new Image(),
+                clouds: new Image(),
+                saturn: new Image(),
+                ring: new Image(),
+                mars: new Image()
+            };
+            images.earth.src = 'textures/earth.png';
+            images.clouds.src = 'textures/earth_clouds.png';
+            images.saturn.src = 'textures/saturn.png';
+            images.ring.src = 'textures/saturn_ring.png';
+            images.mars.src = 'textures/mars.png';
+
+            const stars2D = [];
+            for (let i = 0; i < 200; i++) {
+                stars2D.push({
+                    x: Math.random(),
+                    y: Math.random(),
+                    r: Math.random() * 1.5 + 0.5,
+                    alpha: Math.random() * 0.7 + 0.3
+                });
+            }
+
+            const asteroids2D = [];
+            for (let i = 0; i < 7; i++) {
+                const pts = [];
+                const numPts = 7;
+                const aR = 12 + Math.random() * 20;
+                for (let p = 0; p < numPts; p++) {
+                    const ang = (p / numPts) * Math.PI * 2;
+                    const rad = aR * (0.75 + Math.random() * 0.5);
+                    pts.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad });
+                }
+                asteroids2D.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    vx: (Math.random() - 0.5) * 8,
+                    vy: (Math.random() - 0.5) * 4,
+                    rot: Math.random() * Math.PI * 2,
+                    vRot: (Math.random() - 0.5) * 0.02,
+                    pts: pts
+                });
+            }
+            let rocket2DProg = 0;
+
+            let view = {
+                targetX: 0,
+                targetZoom: 1,
+                currentX: 0,
+                currentZoom: 1
+            };
+
+            function setTarget(key) {
+                updateUI(key);
+                if (key === 'all') {
+                    view.targetX = 0;
+                    view.targetZoom = 0.44;
+                } else if (key === 'earth') {
+                    view.targetX = 0;
+                    view.targetZoom = 1.0;
+                } else if (key === 'saturn') {
+                    view.targetX = -450;
+                    view.targetZoom = 0.88;
+                } else if (key === 'mars') {
+                    view.targetX = 400;
+                    view.targetZoom = 1.05;
+                }
+            }
+
+            const initH = window.location.hash.replace('#', '').toLowerCase();
+            if (['all', 'earth', 'saturn', 'mars'].includes(initH)) {
+                setTarget(initH);
+            } else {
+                setTarget('earth');
+            }
+
+            window.addEventListener('hashchange', () => {
+                const h = window.location.hash.replace('#', '').toLowerCase();
+                if (['all', 'earth', 'saturn', 'mars'].includes(h)) setTarget(h);
+            });
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    setTarget(btn.getAttribute('data-planet'));
+                });
+            });
+
+            btnRotate.addEventListener('click', (e) => {
+                e.stopPropagation();
+                autoRotate = !autoRotate;
+                btnRotate.classList.toggle('off', !autoRotate);
+            });
+
+            let rotOffset = 0;
+            let lastTime = performance.now();
+
+            function render() {
+                requestAnimationFrame(render);
+                const now = performance.now();
+                const delta = (now - lastTime) / 1000;
+                lastTime = now;
+
+                if (autoRotate) {
+                    rotOffset += delta * 25;
+                }
+
+                view.currentX += (view.targetX - view.currentX) * 0.08;
+                view.currentZoom += (view.targetZoom - view.currentZoom) * 0.08;
+
+                ctx.fillStyle = '#030a1c';
+                ctx.fillRect(0, 0, width, height);
+
+                for (const s of stars2D) {
+                    ctx.fillStyle = `rgba(144, 180, 206, ${s.alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(s.x * width, s.y * height, s.r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                for (const a of asteroids2D) {
+                    a.x += a.vx * delta * 10;
+                    a.y += a.vy * delta * 10;
+                    a.rot += a.vRot * delta * 60;
+                    if (a.x < -60) a.x = width + 60;
+                    if (a.x > width + 60) a.x = -60;
+                    if (a.y < -60) a.y = height + 60;
+                    if (a.y > height + 60) a.y = -60;
+
+                    ctx.save();
+                    ctx.translate(a.x, a.y);
+                    ctx.rotate(a.rot);
+                    ctx.beginPath();
+                    for (let i = 0; i < a.pts.length; i++) {
+                        if (i === 0) ctx.moveTo(a.pts[i].x, a.pts[i].y);
+                        else ctx.lineTo(a.pts[i].x, a.pts[i].y);
+                    }
+                    ctx.closePath();
+                    ctx.fillStyle = '#655e69';
+                    ctx.fill();
+                    ctx.strokeStyle = '#433d47';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                rocket2DProg += delta * 0.18;
+                const rkX = ((Math.sin(rocket2DProg) * 0.45 + 0.5) * width);
+                const rkY = ((Math.cos(rocket2DProg * 1.6) * 0.25 + 0.3) * height);
+                const nextRkX = ((Math.sin(rocket2DProg + 0.05) * 0.45 + 0.5) * width);
+                const nextRkY = ((Math.cos((rocket2DProg + 0.05) * 1.6) * 0.25 + 0.3) * height);
+                const rkAngle = Math.atan2(nextRkY - rkY, nextRkX - rkX);
+
+                ctx.save();
+                ctx.translate(rkX, rkY);
+                ctx.rotate(rkAngle);
+
+                ctx.fillStyle = '#ff7700';
+                ctx.beginPath();
+                ctx.moveTo(-16, -3);
+                ctx.lineTo(-24 - Math.sin(now * 0.05) * 6, 0);
+                ctx.lineTo(-16, 3);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#d94141';
+                ctx.beginPath();
+                ctx.moveTo(-8, -4);
+                ctx.lineTo(-14, -9);
+                ctx.lineTo(-6, -2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(-8, 4);
+                ctx.lineTo(-14, 9);
+                ctx.lineTo(-6, 2);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#d8dbe2';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 14, 4.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#d94141';
+                ctx.beginPath();
+                ctx.moveTo(10, -4);
+                ctx.lineTo(19, 0);
+                ctx.lineTo(10, 4);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#38bdf8';
+                ctx.beginPath();
+                ctx.arc(4, 0, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+
+                const cx = width / 2 + view.currentX * view.currentZoom;
+                const cy = height / 2;
+                const zoom = view.currentZoom;
+
+                drawPlanet('mars', cx - 400 * zoom, cy, 110 * zoom, images.mars, null, rotOffset * 0.7);
+                drawPlanet('earth', cx, cy, 140 * zoom, images.earth, images.clouds, rotOffset);
+                drawSaturn(cx + 450 * zoom, cy, 160 * zoom, images.saturn, images.ring, rotOffset * 0.85);
+            }
+
+            function drawPlanet(name, x, y, r, img, cloudImg, rot) {
+                if (x + r < 0 || x - r > width) return;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.clip();
+
+                ctx.fillStyle = (name === 'mars') ? '#c84422' : '#1e5bb8';
+                ctx.fill();
+
+                if (img.complete && img.naturalWidth) {
+                    const tw = r * 4;
+                    const th = r * 2;
+                    const shift = (rot * 1.5) % tw;
+                    ctx.drawImage(img, x - r - shift, y - r, tw, th);
+                    ctx.drawImage(img, x - r - shift + tw, y - r, tw, th);
+                }
+
+                if (cloudImg && cloudImg.complete && cloudImg.naturalWidth) {
+                    ctx.globalAlpha = 0.75;
+                    const tw = r * 4;
+                    const th = r * 2;
+                    const shift = (rot * 2.1) % tw;
+                    ctx.drawImage(cloudImg, x - r - shift, y - r, tw, th);
+                    ctx.drawImage(cloudImg, x - r - shift + tw, y - r, tw, th);
+                    ctx.globalAlpha = 1.0;
+                }
+
+                const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+                grad.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
+                grad.addColorStop(0.8, 'rgba(3, 10, 28, 0.7)');
+                grad.addColorStop(1, 'rgba(3, 10, 28, 0.98)');
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            function drawSaturn(x, y, r, img, ringImg, rot) {
+                if (x + r * 2 < 0 || x - r * 2 > width) return;
+
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(0.35); 
+                const ringW = r * 2.2;
+                const ringH = r * 0.55;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(-ringW, -ringH, ringW * 2, ringH);
+                ctx.clip();
+                if (ringImg.complete && ringImg.naturalWidth) {
+                    ctx.drawImage(ringImg, -ringW, -ringH, ringW * 2, ringH * 2);
+                } else {
+                    ctx.fillStyle = 'rgba(217, 179, 124, 0.7)';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, ringW, ringH, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+                ctx.restore();
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.fillStyle = '#dfbb7c';
+                ctx.fill();
+
+                if (img.complete && img.naturalWidth) {
+                    const tw = r * 4;
+                    const th = r * 2;
+                    const shift = (rot * 1.2) % tw;
+                    ctx.drawImage(img, x - r - shift, y - r, tw, th);
+                    ctx.drawImage(img, x - r - shift + tw, y - r, tw, th);
+                }
+
+                const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0.25)');
+                grad.addColorStop(0.4, 'rgba(0, 0, 0, 0)');
+                grad.addColorStop(0.8, 'rgba(3, 10, 28, 0.7)');
+                grad.addColorStop(1, 'rgba(3, 10, 28, 0.98)');
+                ctx.fillStyle = grad;
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(0.35);
+                ctx.beginPath();
+                ctx.rect(-ringW, 0, ringW * 2, ringH);
+                ctx.clip();
+                if (ringImg.complete && ringImg.naturalWidth) {
+                    ctx.drawImage(ringImg, -ringW, -ringH, ringW * 2, ringH * 2);
+                } else {
+                    ctx.fillStyle = 'rgba(217, 179, 124, 0.7)';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, ringW, ringH, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            render();
+        }
